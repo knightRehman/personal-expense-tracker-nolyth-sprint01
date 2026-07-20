@@ -3,10 +3,22 @@ Personal Expense Tracker API — Nolyth Sprint 01 project.
 
 Run locally:
     uvicorn app.main:app --reload
+
+Interactive docs available at /docs (Swagger) and /redoc.
 """
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+
 from app.database import Base, engine
 from app.routers import auth, categories, expenses
 
+# Create tables on startup (fine for SQLite/dev; use Alembic migrations in production).
+# Wrapped so a DB connection problem doesn't crash the whole app on import —
+# without this, a bad DATABASE_URL takes down /docs too, making it much
+# harder to debug. Endpoints that actually touch the DB will still fail
+# clearly if the connection is bad; this only protects startup.
 import sys
 try:
     Base.metadata.create_all(bind=engine)
