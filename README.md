@@ -1,180 +1,159 @@
 # Personal Expense Tracker
 
-A full-stack expense tracking application built for **Nolyth Sprint 01 — Backend Foundations**.
-Users register, log in, create spending categories, and log expenses against them through a
-Streamlit UI backed by a FastAPI + SQLAlchemy REST API with JWT authentication.
+A full-stack expense tracking application with JWT authentication, built for Nolyth Sprint 01 — Backend Foundations. The system exposes a REST API for managing users, categories, and expenses, backed by a relational database, with a Streamlit client consuming that API.
 
-> Built and tested end-to-end. All endpoints below were exercised with an automated smoke test
-> before this repo was finalized (register → login → protected CRUD → validation errors →
-> ownership checks → delete → summary).
+Live demo: https://knightrehman-personal-expense-trac-frontendstreamlit-app-huoymm.streamlit.app/
+API documentation: https://personal-expense-tracker-nolyth-spr-xi.vercel.app/docs
 
-## Why this project (mapped to sprint requirements)
+## Overview
 
-| Sprint requirement | Where it lives |
-|---|---|
-| Authentication / protected user action | JWT login (`/auth/login`) protects every category & expense route |
-| 4+ meaningful CRUD/API endpoints | 11 endpoints across auth, categories, expenses (see table below) |
-| Pydantic request/response validation | `app/schemas.py` — e.g. `amount` must be `> 0`, usernames have length limits |
-| Database models + persistent storage | `app/models.py` — SQLAlchemy models with real relationships (User → Category → Expense) |
-| Error handling with helpful messages | Custom 400/401/404/422 responses with human-readable `detail` text |
-| Streamlit UI calling the API | `frontend/streamlit_app.py` — forms, tables, buttons, filters, a bar chart |
-| GitHub repo with README + setup | This file |
-| Demo | See "Demo Script" section below |
+The application allows a user to register an account, authenticate via JWT, define spending categories, and record expenses against those categories. All data is scoped per user — no user can read, modify, or delete another user's records, even by guessing an object ID. The API is fully documented via OpenAPI/Swagger and validated end to end with Pydantic schemas.
 
 ## Tech Stack
 
-- **Python 3.12**
-- **FastAPI** — REST API, routing, auto-generated docs (`/docs`, `/redoc`)
-- **SQLAlchemy** — ORM models, relationships, session management
-- **SQLite** (default, zero setup) — swappable to PostgreSQL via `DATABASE_URL`
-- **Pydantic v2** — request/response schemas and validation
-- **python-jose + passlib[bcrypt]** — JWT issuing/verification and password hashing
-- **Streamlit** — frontend UI
-- **requests / pandas** — API client and table rendering in the UI
+| Layer | Technology |
+|---|---|
+| API framework | FastAPI |
+| Language | Python 3.12 |
+| ORM | SQLAlchemy 2.x |
+| Database | SQLite (local development), PostgreSQL (production) |
+| Authentication | JSON Web Tokens (python-jose), bcrypt password hashing (passlib) |
+| Validation | Pydantic v2 |
+| Frontend | Streamlit |
+| Deployment | Vercel (API), Neon (PostgreSQL), Streamlit Community Cloud (UI) |
 
 ## Architecture
 
-```
 expense-tracker/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py          # FastAPI app, CORS, exception handlers, router registration
-│   │   ├── database.py      # Engine/session setup (SQLite by default)
-│   │   ├── models.py        # SQLAlchemy models: User, Category, Expense
-│   │   ├── schemas.py       # Pydantic request/response models
-│   │   ├── auth.py          # Password hashing, JWT create/verify, get_current_user dependency
-│   │   ├── crud.py          # DB query functions used by routers
+│   │   ├── main.py          Application entrypoint: app instance, CORS, exception handlers, router registration
+│   │   ├── database.py      Engine and session configuration; resolves DATABASE_URL for SQLite or PostgreSQL
+│   │   ├── models.py        SQLAlchemy models: User, Category, Expense, and their relationships
+│   │   ├── schemas.py       Pydantic request and response models
+│   │   ├── auth.py          Password hashing, JWT issuance and verification, current-user dependency
+│   │   ├── crud.py          Database query functions consumed by the routers
 │   │   └── routers/
-│   │       ├── auth.py        # /auth/register, /auth/login, /auth/me
-│   │       ├── categories.py  # /categories CRUD
-│   │       └── expenses.py    # /expenses CRUD + /expenses/summary
+│   │       ├── auth.py        Registration, login, current user
+│   │       ├── categories.py  Category CRUD
+│   │       └── expenses.py    Expense CRUD and summary aggregation
 │   └── requirements.txt
 ├── frontend/
-│   ├── streamlit_app.py     # Streamlit UI — pure API client, no DB access
+│   ├── streamlit_app.py     Streamlit client; communicates with the API exclusively over HTTP
 │   └── requirements.txt
-├── screenshots/             # Add your screenshots here (see below)
+├── screenshots/
 └── README.md
-```
 
-**Data model:**
+The frontend holds no business logic or direct database access. Every action in the UI corresponds to a call against the documented API surface.
 
-```
-User 1───* Category 1───* Expense
-User 1─────────────────* Expense   (every expense also links straight back to its owner)
-```
+## Data Model
 
-Each user only ever sees their own categories and expenses — every query is filtered by
-`user_id`, and the current user is resolved from the JWT on every protected request.
+User (1) ──── (many) Category
+User (1) ──── (many) Expense
+Category (1) ── (many) Expense
 
-## API Endpoints
+Every category and expense record carries a `user_id` foreign key, and every query in `crud.py` filters on it. Authorization is therefore enforced at the query layer, not only at the route layer.
 
-| Method | Path | Auth required | Description |
+## API Reference
+
+| Method | Endpoint | Auth | Description |
 |---|---|---|---|
 | GET | `/` | No | Health check |
 | POST | `/auth/register` | No | Create a new user account |
-| POST | `/auth/login` | No | Log in, returns a JWT access token |
-| GET | `/auth/me` | Yes | Get the logged-in user's profile |
+| POST | `/auth/login` | No | Authenticate and receive a JWT access token |
+| GET | `/auth/me` | Yes | Return the authenticated user's profile |
 | POST | `/categories/` | Yes | Create a category |
-| GET | `/categories/` | Yes | List your categories |
-| DELETE | `/categories/{id}` | Yes | Delete a category (blocked if expenses reference it) |
+| GET | `/categories/` | Yes | List categories owned by the authenticated user |
+| DELETE | `/categories/{id}` | Yes | Delete a category; rejected if expenses still reference it |
 | POST | `/expenses/` | Yes | Create an expense |
-| GET | `/expenses/` | Yes | List expenses (optional `category_id`, `start_date`, `end_date` filters) |
-| GET | `/expenses/summary` | Yes | Total spend + per-category breakdown |
-| GET | `/expenses/{id}` | Yes | Get a single expense |
+| GET | `/expenses/` | Yes | List expenses, with optional `category_id`, `start_date`, `end_date` filters |
+| GET | `/expenses/summary` | Yes | Total spend and per-category aggregation |
+| GET | `/expenses/{id}` | Yes | Retrieve a single expense |
 | PUT | `/expenses/{id}` | Yes | Update an expense (partial updates supported) |
 | DELETE | `/expenses/{id}` | Yes | Delete an expense |
 
-Full interactive documentation (try-it-out included) is auto-generated at `/docs` once the
-backend is running.
+Interactive documentation with request/response schemas and a try-it-out interface is generated automatically at `/docs` (Swagger UI) and `/redoc` (ReDoc) once the backend is running.
 
-## Setup
+## Error Handling
 
-### 1. Backend
+Validation errors return HTTP 422 with a structured payload identifying the offending field and reason. Authentication failures return 401. Ownership or not-found violations return 404. Business-rule violations, such as deleting a category with existing expenses, return 400 with a descriptive message. A custom exception handler in `main.py` normalizes FastAPI's default validation error format into a more consumable shape for API clients.
+
+## Local Setup
+
+### Prerequisites
+
+- Python 3.10 or later
+- pip
+
+### Backend
 
 ```bash
 cd backend
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+python -m venv venv
+venv\Scripts\activate          # macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-The API is now running at `http://127.0.0.1:8000`. Visit `http://127.0.0.1:8000/docs` for
-Swagger UI. A `expenses.db` SQLite file is created automatically on first run — no manual
-database setup needed.
+The API starts at `http://127.0.0.1:8000`. On first run, a local SQLite database file (`expenses.db`) is created automatically; no manual schema setup is required.
 
-**Optional environment variables:**
+Environment variables (optional for local development):
 
 ```bash
-export SECRET_KEY="something-long-and-random"      # JWT signing key (set this in production)
-export DATABASE_URL="postgresql://user:pass@localhost:5432/expenses"  # switch to Postgres
+SECRET_KEY=<a long random string>                          # JWT signing key
+DATABASE_URL=postgresql://user:password@host:5432/dbname    # overrides the SQLite default
 ```
 
-### 2. Frontend
+### Frontend
 
-In a **second terminal** (keep the backend running):
+With the backend running, in a separate terminal:
 
 ```bash
 cd frontend
-python3 -m venv venv
-source venv/bin/activate
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-Streamlit opens at `http://localhost:8501`. If your backend runs somewhere other than
-`http://127.0.0.1:8000`, set `API_URL` before launching:
+The UI starts at `http://localhost:8501`. Set `API_URL` if the backend is not running at the default local address:
 
 ```bash
-export API_URL="http://127.0.0.1:8000"
-streamlit run streamlit_app.py
+API_URL=http://127.0.0.1:8000 streamlit run streamlit_app.py
 ```
 
-### 3. Try it
+## Deployment
 
-1. Register a user in the sidebar, then log in.
-2. Go to the **Categories** tab and add a category (e.g. "Food", "Transport").
-3. Go to the **Expenses** tab, add a few expenses against those categories.
-4. Check the **Summary** tab for the total spend and per-category bar chart.
+| Component | Platform | Notes |
+|---|---|---|
+| Database | Neon | Managed PostgreSQL; connection string set as `DATABASE_URL` on the API host |
+| API | Vercel | Serverless Python functions; entrypoint at `backend/main.py`, re-exporting the FastAPI instance from `app/main.py` |
+| Frontend | Streamlit Community Cloud | Main file `frontend/streamlit_app.py`; `API_URL` set via Streamlit secrets |
 
-## Screenshots
+`database.py` normalizes the `postgres://` scheme some providers issue into the `postgresql://` scheme SQLAlchemy 2.x requires, and explicitly routes connections through the `psycopg` (v3) driver rather than the default `psycopg2`, since `psycopg2`'s compiled extension does not reliably import in Vercel's serverless Python runtime. No code change is needed when moving from local SQLite to hosted Postgres beyond setting `DATABASE_URL`.
 
-Add screenshots of your running app here before submission:
+Table creation on startup (`Base.metadata.create_all`) is wrapped in a try/except so a transient database connection issue fails loudly in the logs rather than taking down the entire API, including `/docs`.
 
-- `screenshots/swagger-docs.png` — the `/docs` page showing all endpoints
-- `screenshots/login.png` — the Streamlit login/register screen
-- `screenshots/expenses-tab.png` — the expenses form + table
-- `screenshots/summary-tab.png` — the summary tab with the bar chart
+## Design Notes
 
-## Demo Script (for the review)
+- Pydantic schemas (`schemas.py`) are kept separate from SQLAlchemy models (`models.py`) so that internal fields, such as the hashed password, are never serializable into an API response, and so that input validation rules are independent of database column definitions.
+- Query logic is isolated in `crud.py` rather than inlined in route handlers, keeping routers focused on HTTP concerns (status codes, dependency injection, authorization) while queries remain independently reusable and testable.
+- Authentication is stateless via JWT rather than server-side sessions, which keeps the API usable by any client — the Streamlit frontend here, but equally a single-page application or mobile client without modification.
+- Ownership checks are applied uniformly at the query layer: every lookup by ID is filtered by the authenticated user's `user_id`, preventing access to another user's records regardless of route-level checks.
 
-**Problem:** People lose track of day-to-day spending because it's scattered across receipts,
-bank apps, and memory. This app gives a single place to log an expense in seconds and see
-where money is actually going, broken down by category.
+## Testing
 
-**Flow to walk through live:**
-1. Register/login → show the JWT being issued and that `/expenses` returns 401 without it.
-2. Create a category, then an expense → point out Pydantic rejecting a negative amount.
-3. Show the API docs at `/docs` — routes, schemas, status codes, all auto-generated.
-4. Show the database file / a quick `sqlite3 expenses.db "select * from expenses;"` to prove
-   it's persisted, not hardcoded.
-5. Switch to Streamlit → add/delete an expense, filter by category, show the summary chart
-   updating live.
+The API has been exercised end to end using FastAPI's `TestClient`, covering registration, duplicate-user rejection, login and invalid-credential handling, unauthorized access, category and expense CRUD, input validation failures, ownership boundaries, and the summary aggregation. Manual verification checklist:
 
-**Technical choices to be ready to explain:**
-- Why JWT over session cookies: stateless, easy to plug into any frontend (Streamlit here,
-  but the same API works with a JS SPA or mobile app unchanged).
-- Why separate `schemas.py` (Pydantic) from `models.py` (SQLAlchemy): input validation and
-  DB structure are different concerns — this also stops `hashed_password` from ever being
-  serialized back to a client.
-- Why `crud.py` is separate from the routers: keeps route handlers focused on HTTP concerns
-  (status codes, auth) while query logic stays testable on its own.
-- Ownership checks: every category/expense query is filtered by `user_id`, so one user can
-  never read, edit, or delete another user's data even by guessing an ID.
+1. Register a user and log in.
+2. Create a category; attempt to create a duplicate and confirm rejection.
+3. Create expenses against the category; attempt a non-positive amount and confirm rejection.
+4. Filter expenses by category and by date range.
+5. Confirm the summary endpoint reflects the correct totals.
+6. Attempt to delete a category with existing expenses and confirm rejection.
+7. Delete an expense and confirm it no longer appears in listings or the summary.
 
-## Notes
+## Author
 
-- SQLite is used by default for zero-setup grading; swapping to PostgreSQL is a one-line
-  `DATABASE_URL` change since all access goes through SQLAlchemy.
-- `SECRET_KEY` has a dev default so the project runs out of the box — set a real one via
-  environment variable for anything beyond local grading/demo use.
+Wasi-Ur-Rehman
+Nolyth Sprint 01 — Backend Foundations
