@@ -26,6 +26,11 @@ if _raw:
     print(f"[DIAGNOSTIC] DATABASE_URL env var FOUND. scheme={_scheme!r} host={_host!r}", file=sys.stderr)
 else:
     print("[DIAGNOSTIC] DATABASE_URL env var NOT FOUND — falling back to SQLite.", file=sys.stderr)
+
+_all_keys = sorted(os.environ.keys())
+_custom_looking = [k for k in _all_keys if not k.startswith(("VERCEL", "AWS_", "LAMBDA", "PATH", "LANG", "PYTHON", "HOME", "PWD", "_", "TZ", "LD_", "SHLVL", "NODE_"))]
+print(f"[DIAGNOSTIC] Total env vars visible: {len(_all_keys)}", file=sys.stderr)
+print(f"[DIAGNOSTIC] Non-system-looking env var keys: {_custom_looking}", file=sys.stderr)
 # --- END DIAGNOSTIC ---
 
 if DATABASE_URL.startswith("postgres://"):
@@ -40,7 +45,6 @@ Base = declarative_base()
 
 
 def get_db():
-    """FastAPI dependency that yields a DB session and always closes it."""
     db = SessionLocal()
     try:
         yield db

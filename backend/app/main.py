@@ -3,19 +3,15 @@ Personal Expense Tracker API — Nolyth Sprint 01 project.
 
 Run locally:
     uvicorn app.main:app --reload
-
-Interactive docs available at /docs (Swagger) and /redoc.
 """
-from fastapi import FastAPI, Request, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-
 from app.database import Base, engine
 from app.routers import auth, categories, expenses
 
-# Create tables on startup (fine for SQLite/dev; use Alembic migrations in production)
-Base.metadata.create_all(bind=engine)
+import sys
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as _startup_db_error:
+    print(f"[STARTUP WARNING] Could not create database tables: {_startup_db_error!r}", file=sys.stderr)
 
 app = FastAPI(
     title="Personal Expense Tracker API",
