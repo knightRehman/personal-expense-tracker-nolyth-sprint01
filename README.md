@@ -24,6 +24,7 @@ The application allows a user to register an account, authenticate via JWT, defi
 
 ## Architecture
 
+```
 expense-tracker/
 ├── backend/
 │   ├── app/
@@ -43,14 +44,17 @@ expense-tracker/
 │   └── requirements.txt
 ├── screenshots/
 └── README.md
+```
 
 The frontend holds no business logic or direct database access. Every action in the UI corresponds to a call against the documented API surface.
 
 ## Data Model
 
+```
 User (1) ──── (many) Category
 User (1) ──── (many) Expense
 Category (1) ── (many) Expense
+```
 
 Every category and expense record carries a `user_id` foreign key, and every query in `crud.py` filters on it. Authorization is therefore enforced at the query layer, not only at the route layer.
 
